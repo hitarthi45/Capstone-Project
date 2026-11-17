@@ -1,0 +1,166 @@
+// ===========================
+// Prisma schema – MySQL version (Phase 1)
+// ===========================
+
+datasource db {
+  provider = "mysql"
+  url      = env("DB_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ---------- Enums ----------
+enum Role {
+  ADMIN
+  HOD
+  FACULTY
+  STUDENT
+}
+
+enum ComponentType {
+  THEORY
+  PRACTICAL
+  PROJECT
+  OTHER
+}
+
+enum SchemeStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+}
+
+// ===========================
+// Existing models (unchanged)
+// ===========================
+
+model User {
+  id           Int        @id @default(autoincrement())
+  name         String
+  email        String     @unique
+  passwordHash String
+  role         Role
+  department   Department? @relation("UserDepartment", fields: [departmentId], references: [id])
+  departmentId Int?
+  isActive     Boolean    @default(true)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  deletedAt    DateTime?
+
+  // Relations used by the new scheme models
+  createdSchemes   TeachingScheme[] @relation("CreatedSchemes")
+  facultySchemes   TeachingScheme[] @relation("FacultySchemes")
+  hodSchemes       TeachingScheme[] @relation("HodSchemes")
+  schemeAnswers    SchemeAnswer[]
+
+  // Original relations
+  assignments      CourseAssignment[]
+  hodDepartment    Department?      @relation("HODDepartment")
+
+  @@index([departmentId], name: "idx_user_department")
+  @@index([email], name: "idx_user_email")
+}
+
+model Department {
+  id        Int      @id @default(autoincrement())
+  name      String
+  code      String   @unique
+  hod       User?    @relation("HODDepartment", fields: [hodId], references: [id])
+  hodId     Int?     @unique
+  programs  Program[]
+  users     User[]   @relation("UserDepartment")
+  courses   Course[] @relation("DepartmentCourses")
+}
+
+model Program {
+  id           Int       @id @default(autoincrement())
+  name         String
+  department   Department @relation(fields: [departmentId], references: [id])
+  departmentId Int
+  semesters    Semester[]
+}
+
+model Semester {
+  id           Int       @id @default(autoincrement())
+  number       Int
+  academicYear String
+  program      Program   @relation(fields: [programId], references: [id])
+  programId    Int
+  courses      Course[]
+}
+
+model Course {
+  id          Int       @id @default(autoincrement())
+  code        String    @unique
+  title       String
+  type        String    // CORE | ELECTIVE | LAB
+  credits     Int
+  L           Int
+  T           Int
+  P           Int
+  semester    Semester  @relation(fields: [semesterId], references: [id])
+  semesterId  Int
+  department  Department @relation("DepartmentCourses", fields: [departmentId], references: [id])
+  departmentId Int
+  assignments CourseAssignment[]
+}
+
+model CourseAssignment {
+  id           Int    @id @default(autoincrement())
+  course       Course @relation(fields: [courseId], references: [id])
+  courseId     Int
+  faculty      User   @relation(fields: [facultyId], references: [id])
+  facultyId    Int
+  academicYear String
+}
+
+// -------------------------------------------------------------------
+// NEW models for Teaching & Assessment Scheme (Phase 1)
+// -------------------------------------------------------------------
+
+model TeachingScheme {
+  id          Int          @id @default(autoincrement())
+  title       String
+  semester    Semester     @relation(fields: [semesterId], references: [id])
+  semesterId  Int
+  creatorId   Int
+  creator     User         @relation("CreatedSchemes", fields: [creatorId], references: [id])
+  facultyId   Int?         // set when a faculty creates the draft
+  faculty     User?        @relation("FacultySchemes", fields: [facultyId], references: [id])
+  hodId       Int?         // set when a HOD approves
+  hod         User?        @relation("HodSchemes", fields: [hodId], references: [id])
+  status      SchemeStatus @default(DRAFT)
+  components  AssessmentComponent[]
+  answers     SchemeAnswer[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+}
+
+model AssessmentComponent {
+  id            Int          @id @default(autoincrement())
+  schemeId      Int
+  scheme        TeachingScheme @relation(fields: [schemeId], references: [id])
+  componentType ComponentType
+  description   String
+  maxMarks      Int
+  answers       SchemeAnswer[]
+}
+
+model SchemeAnswer {
+  id           Int          @id @default(autoincrement())
+  componentId  Int
+  component    AssessmentComponent @relation(fields: [componentId], references: [id])
+  responderId  Int
+  responder    User         @relation(fields: [responderId], references: [id])
+  answerText   String?
+  answerScore  Int?
+  createdAt    DateTime      @default(now())
+
+  @@unique([componentId, responderId])
+}
+
+// -------------------------------------------------------------------
+// Add any additional legacy models below if needed.
+// -------------------------------------------------------------------
